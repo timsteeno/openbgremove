@@ -10,15 +10,15 @@ after every meaningful step and commit it.
 ## Constraints discovered
 - Dev sandbox can only reach the npm registry (no CDNs / HuggingFace / GitHub
   downloads). All assets therefore come from npm packages and are vendored
-  into `bg-remover/` so the site works offline / on any static host.
-- Originally developed in `timsteeno/final_finance` (branch
-  `ccr-eb3d823d-jcu3zm`, folder `bg-remover/`) by mistake; moving to its own
-  public repo `timsteeno/openbgremove` (folder contents become the repo root).
+  into this repo so the site works offline / on any static host.
+- Repo: `timsteeno/openbgremove` (public, branch `main`). History before
+  the move was developed under `bg-remover/` in `timsteeno/final_finance`.
+- Hosting: GitHub Pages from `main` / root; `.nojekyll` is present.
   App code relicensed to The Unlicense (public domain) per the owner.
 
 ## Architecture
 - Static site, no build step. Open `index.html` via any static server
-  (`python3 -m http.server` in `bg-remover/`). ES modules + module Web Worker.
+  (`python3 -m http.server` in the repo root). ES modules + module Web Worker.
 - Inference: onnxruntime-web 1.22.0 (MIT), `ort.webgpu.min.mjs` (WebGPU EP
   with WASM fallback) in `vendor/ort/`.
 - `vendor/coi-serviceworker.js` (MIT) enables cross-origin isolation on plain
@@ -63,7 +63,7 @@ after every meaningful step and commit it.
 ## Iteration log
 - 2026-10-28: Investigated sandbox network, picked models, verified ISNet
   quint8 in Python onnxruntime on skimage sample images (good cutouts).
-- 2026-10-28: v1 implemented (all files under bg-remover/). Smoke test passes
+- 2026-10-28: v1 implemented. Smoke test passes
   in headless Chromium: astronaut sample processed with Balanced model,
   wasm x3 threads, crossOriginIsolated=true.
 - NEXT: spawn sub-agents to (a) write a full Playwright E2E suite and report
@@ -71,7 +71,7 @@ after every meaningful step and commit it.
   Fix findings, re-test, repeat.
 
 ## How to test
-    cd bg-remover && python3 -m http.server 8765 &
+    python3 -m http.server 8765 &   # from the repo root
     node tests/smoke.mjs http://localhost:8765/
 Playwright is preinstalled globally in the dev container (require via
 createRequire, see tests/smoke.mjs).
@@ -117,3 +117,5 @@ createRequire, see tests/smoke.mjs).
 - NEXT ideas: drag/scale photo backgrounds; brush size in image px option;
   i18n; more agent rounds on real-world photo categories when test photos
   are available.
+- 2026-10-28: Moved to its own public repo timsteeno/openbgremove; app code
+  released into the public domain (Unlicense).
