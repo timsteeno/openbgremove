@@ -119,3 +119,12 @@ createRequire, see tests/smoke.mjs).
   are available.
 - 2026-10-28: Moved to its own public repo timsteeno/openbgremove; app code
   released into the public domain (Unlicense).
+- 2026-10-28: User report: "Re-run removal" ran for minutes with no feedback.
+  Not reproducible on CPU (re-run ~9 s); likely a stalled WebGPU run (untested
+  here, no GPU) or a first-time model download. Added: overlay shows model +
+  CPU/GPU, expected time learned from this device's past runs, time-based
+  progress bar; watchdog retries on CPU when the GPU stalls (>4x expected or
+  >30 s; engine start >45 s) and remembers it for the session; "Use Fast model
+  instead" button on slow runs. tests/e2e5.mjs. All suites pass.
+- OPEN QUESTION: which model/browser/GPU the user had — real GPU testing still
+  needed.

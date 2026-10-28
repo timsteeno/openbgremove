@@ -41,7 +41,13 @@ function onWorkerMessage(e) {
     updateOverlay();
   } else if (m.type === 'status') {
     const p = pending.get(m.id);
-    if (p) { p.item.stage = m.stage; if (m.stage !== 'loading-model') readyModels.add(p.model); updateOverlay(); }
+    if (p) {
+      p.item.stage = m.stage;
+      p.item.stageAt = performance.now();
+      if (m.backend) p.item.backendRunning = m.backend;
+      if (m.stage !== 'loading-model') readyModels.add(p.model);
+      updateOverlay();
+    }
   } else if (m.type === 'result') {
     const p = pending.get(m.id);
     pending.delete(m.id);
@@ -92,10 +98,11 @@ function failEngine(msg) {
 startWorker();
 
 // Abort the running job by restarting the worker (ORT runs can't be interrupted).
-function cancelProcessing() {
+function cancelProcessing({ retry = false } = {}) {
   worker.terminate();
   const err = new Error('Cancelled');
   err.cancelled = true;
+  err.retry = retry;
   for (const p of pending.values()) p.reject(err);
   pending.clear();
   readyModels.clear();
@@ -108,9 +115,11 @@ function runWorker(item, bitmap) {
   const id = ++reqId;
   return new Promise((resolve, reject) => {
     const model = state.model;
+    const device = item.forceCpu || gpuTooSlow.has(model) ? 'cpu' : state.device;
     item.modelRunning = model;
+    item.backendRunning = '';
     pending.set(id, { resolve: (r) => resolve({ ...r, model }), reject, item, model });
-    worker.postMessage({ type: 'run', id, model, device: state.device, bitmap, refine: state.refine }, [bitmap]);
+    worker.postMessage({ type: 'run', id, model, device, bitmap, refine: state.refine }, [bitmap]);
   });
 }
 
@@ -287,6 +296,49 @@ async function addFromUrl(url) {
   }
 }
 
+// ---------- Timing estimates ----------
+// Rough first-run guesses (ms of inference + refine on a typical laptop CPU);
+// replaced by this device's own measurements after each run.
+const DEFAULT_ESTIMATE = { fast: 3000, balanced: 12000, best: 18000 };
+const backendKind = (b) => (String(b).startsWith('webgpu') ? 'gpu' : 'cpu');
+
+function recordTiming(model, backend, t) {
+  const key = model + '|' + backendKind(backend);
+  const hist = prefs.get('timings', {});
+  const ms = t.inference + t.refine;
+  hist[key] = hist[key] ? Math.round(hist[key] * 0.6 + ms * 0.4) : ms;
+  prefs.set('timings', hist);
+}
+
+function estimateMs(model, backend) {
+  const hist = prefs.get('timings', {});
+  const kind = backendKind(backend);
+  return hist[model + '|' + kind] || (kind === 'gpu' ? DEFAULT_ESTIMATE[model] / 3 : DEFAULT_ESTIMATE[model]);
+}
+
+const BACKEND_LABEL = (b) => (backendKind(b) === 'gpu' ? 'GPU' : 'CPU');
+const gpuTooSlow = new Set(); // models that stalled on this GPU this session
+
+// Called every 500 ms while processing: restart on the CPU when the GPU path
+// is far slower than expected (some GPUs/drivers stall), and flag slow runs.
+function watchdog(item, elapsedMs, est) {
+  const onGpu = backendKind(item.backendRunning) === 'gpu';
+  const loadingTooLong = item.stage === 'loading-model' && !modelDownloading() && elapsedMs > 45000;
+  const gpuTooLong = onGpu && item.stage === 'inference' && elapsedMs > Math.max(30000, est * 4);
+  if ((loadingTooLong || gpuTooLong) && !item.forceCpu && state.device !== 'cpu') {
+    item.forceCpu = true;
+    gpuTooSlow.add(item.modelRunning);
+    toast('The GPU is much slower than expected on this device, so this image is being retried on the CPU.', true);
+    cancelProcessing({ retry: true });
+    return true;
+  }
+  return false;
+}
+
+function modelDownloading() {
+  return !!(modelProgress && modelProgress.loaded < modelProgress.total);
+}
+
 // ---------- Processing queue ----------
 async function pump() {
   if (state.busy) return;
@@ -295,7 +347,13 @@ async function pump() {
   state.busy = true;
   next.status = 'processing';
   next.stage = 'loading-model';
-  next.startedAt = performance.now();
+  next.startedAt = next.stageAt = performance.now();
+  const wd = setInterval(() => {
+    if (next.status !== 'processing') return;
+    const ms = performance.now() - (next.stageAt || next.startedAt);
+    const est = next.stage === 'loading-model' ? 0 : estimateMs(next.modelRunning || state.model, next.backendRunning);
+    watchdog(next, ms, est);
+  }, 1000);
   renderQueue();
   if (next === state.active) refreshAll();
   try {
@@ -308,12 +366,16 @@ async function pump() {
     next.setCutout(r.rgba, r.width, r.height);
     next.backend = r.backend;
     next.timings = { ...r.timings, total: Math.round(performance.now() - t0) };
+    recordTiming(r.model, r.backend, r.timings);
+    next.forceCpu = false;
     next.status = 'done';
     next.modelUsed = r.model;
     next.thumb = thumbOf(next);
     if (next !== state.active) hibernate(next);
   } catch (err) {
-    if (err.cancelled) {
+    if (err.cancelled && err.retry) {
+      next.status = 'queued'; // watchdog restart (e.g. GPU fallback)
+    } else if (err.cancelled) {
       next.status = 'cancelled';
     } else {
       console.error(err);
@@ -322,6 +384,7 @@ async function pump() {
       if (next === state.active) toast('Background removal failed: ' + next.error, true);
     }
   }
+  clearInterval(wd);
   state.busy = false;
   if (next.status === 'cancelled') {
     next.status = 'queued';
@@ -467,29 +530,59 @@ function updateOverlay() {
   const pos = queue.indexOf(item) + 1;
   const parts = [];
   if (state.items.length > 1 && item.status !== 'error') parts.push(`Image ${pos} of ${queue.length}`);
-  if (item.status === 'processing' && item.startedAt) parts.push(`${((performance.now() - item.startedAt) / 1000).toFixed(0)} s`);
-  sub.textContent = parts.join(' · ');
   const spinner = ov.querySelector('.spinner');
   spinner.hidden = item.status === 'error';
   const prog = $('#overlay-progress');
+  const bar = (pct) => {
+    prog.hidden = false;
+    prog.setAttribute('aria-valuenow', Math.round(pct));
+    $('#overlay-bar').style.width = pct + '%';
+  };
   prog.hidden = true;
   let text = 'Waiting in queue…';
+  let slow = false;
   if (item.status === 'error') text = '⚠ ' + item.error;
   else if (waking) text = 'Opening…';
   else if (!item.decoded) text = 'Reading image…';
   else if (item.status === 'processing') {
+    const running = item.modelRunning || state.model;
+    const def = MODELS[running];
+    const now = performance.now();
+    const stageMs = now - (item.stageAt || item.startedAt || now);
     if (item.stage === 'loading-model') {
-      const running = item.modelRunning || state.model;
-      const def = MODELS[running];
       if (modelProgress && modelProgress.model === running && modelProgress.loaded < modelProgress.total) {
         const pct = Math.round((modelProgress.loaded / modelProgress.total) * 100);
-        text = `Downloading ${def.label} model (${(def.bytes / 1e6).toFixed(0)} MB, one-time)… ${pct}%`;
-        prog.hidden = false;
-        prog.setAttribute('aria-valuenow', pct);
-        $('#overlay-bar').style.width = pct + '%';
-      } else text = readyModels.has(running) ? 'Removing background…' : 'Starting AI engine…';
-    } else if (item.stage === 'inference') text = 'Removing background…';
-    else if (item.stage === 'refining') text = 'Refining edges…';
+        text = `Downloading the ${def.label} model (${(def.bytes / 1e6).toFixed(0)} MB, one-time)… ${pct}%`;
+        bar(pct);
+      } else {
+        text = `Starting the ${def.label} model…`;
+        parts.push(`${(stageMs / 1000).toFixed(0)} s · first start can take a little while`);
+      }
+    } else {
+      const est = estimateMs(running, item.backendRunning);
+      text = `Removing background · ${def.label} model on ${BACKEND_LABEL(item.backendRunning)}`;
+      if (item.stage === 'refining') text = 'Refining edges…';
+      // Time-based progress: approaches 95% at the expected time, then crawls.
+      const r = stageMs / est;
+      bar(r < 1 ? r * 95 : 95 + 4 * (1 - 1 / r));
+      slow = stageMs > Math.max(20000, est * 3);
+      parts.push(`${(stageMs / 1000).toFixed(0)} s · usually about ${Math.max(1, Math.round(est / 1000))} s`);
+      if (slow) parts.push('taking longer than usual');
+    }
+  }
+  sub.textContent = parts.join(' · ');
+  // Offer a faster model when a run drags on.
+  if (slow && !actions.querySelector('[data-act="fast"]') && (item.modelRunning || state.model) !== 'fast') {
+    const b = document.createElement('button');
+    b.className = 'btn small'; b.type = 'button'; b.dataset.act = 'fast';
+    b.textContent = 'Use Fast model instead';
+    b.addEventListener('click', () => {
+      state.model = 'fast';
+      $('#model-select').value = 'fast';
+      prefs.set('model', 'fast');
+      cancelProcessing({ retry: true });
+    });
+    actions.append(b);
   }
   const ot = $('#overlay-text');
   if (ot.textContent !== text) ot.textContent = text;

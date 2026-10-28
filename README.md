@@ -46,6 +46,7 @@ ONLY_FAST=1 node tests/e2e.mjs http://localhost:8765/   # full functional suite
 node tests/e2e2.mjs http://localhost:8765/              # regression checks
 node tests/e2e3.mjs http://localhost:8765/              # review regressions
 node tests/e2e4.mjs http://localhost:8765/              # memory / hibernation
+node tests/e2e5.mjs http://localhost:8765/              # progress feedback / GPU watchdog
 node tests/offline.mjs http://localhost:8765/           # offline/PWA check
 ```
 

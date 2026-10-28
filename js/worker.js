@@ -296,6 +296,7 @@ async function run({ id, model, device, bitmap, refine }) {
   const t0 = performance.now();
   post({ type: 'status', id, stage: 'loading-model' });
   let { session, backend } = await getSession(model, device);
+  const tLoaded = performance.now();
   post({ type: 'status', id, stage: 'inference', backend });
   const { input, px } = preprocess(bitmap, def);
   const tensor = new ort.Tensor('float32', input, [1, 3, def.size, def.size]);
@@ -349,7 +350,7 @@ async function run({ id, model, device, bitmap, refine }) {
   const t2 = performance.now();
   post({
     type: 'result', id, width: w, height: h, rgba: rgba.buffer, backend,
-    timings: { inference: Math.round(t1 - t0), refine: Math.round(t2 - t1) },
+    timings: { load: Math.round(tLoaded - t0), inference: Math.round(t1 - tLoaded), refine: Math.round(t2 - t1) },
   }, [rgba.buffer]);
 }
 
