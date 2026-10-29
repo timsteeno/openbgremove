@@ -47,3 +47,14 @@ jobs:
       - run: node tests/smoke.mjs http://localhost:8765/
         env:
           BROWSER: ${{ matrix.browser }}
+
+  mirrors:
+    name: Model mirrors serve the right bytes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tests/check-mirrors.mjs
