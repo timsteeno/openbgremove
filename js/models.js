@@ -9,7 +9,8 @@
 // returns bytes with the wrong hash is skipped. Self-hosters can put their
 // own CDN first or remove the jsDelivr entry.
 export const MODEL_MIRRORS = [
-  'https://cdn.jsdelivr.net/gh/timsteeno/openbgremove@models-v1/',
+  // Pinned to the commit that added the current model files.
+  'https://cdn.jsdelivr.net/gh/timsteeno/openbgremove@7d505b9a45cbc913ee24a7dca82950a24f0b802c/',
   '', // same origin as the app
 ];
 

@@ -67,8 +67,9 @@ node tests/offline.mjs http://localhost:8765/           # offline/PWA check
 ## Model hosting
 Models are split into parts of at most 20 MB, each with a SHA-256 hash in
 `js/models.js`. The app tries the mirrors in `MODEL_MIRRORS` in order (by
-default jsDelivr serving the `models-v1` tag of this repo, then the site
-itself) and only accepts bytes whose hash matches. This keeps bandwidth off
-GitHub Pages. If you change a model file, publish a new tag (e.g.
-`models-v2`) and update the mirror URL and hashes together.
+default jsDelivr serving this repo's files at a fixed commit, then the
+site itself) and only accepts bytes whose hash matches. This keeps bandwidth off
+GitHub Pages. If you change a model file, commit it, then point the mirror URL at that
+commit and update the hashes together (a commit URL never changes, so CDN
+caches stay valid).
 - Sample images: from scikit-image's bundled data (public domain / CC0).
