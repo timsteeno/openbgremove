@@ -156,11 +156,18 @@ Roadmap doc: https://claude.ai/artifact/7cb9mqxouPJ61fBF2EHGHm
 | 2026-10-29 | MacBook (8 cores, 32 GB, Apple Metal 3, shader-f16) | Chrome 156 | Fast | 0.38 s | hung | wasm x4; first run 3.1 s |
 | 2026-10-29 | same | same | Balanced | 2.87 s | hung | first run 5.8 s |
 | 2026-10-29 | same | same | Best | 2.52 s | hung | first run 19 s incl. 90 MB download |
+| 2026-10-29 | Android 10 phone (8 cores, 8 GB, Mali Valhall, shader-f16) | Chrome 156 | Fast | 0.89 s | not run | wasm x4; first 5.0 s |
+| 2026-10-29 | same | same | Balanced | 7.36 s | not run | first 8.6 s |
+| 2026-10-29 | same | same | Best | 7.55 s | not run | first 16.6 s |
 | 2026-10-29 | GitHub runner (4 vCPU) | Firefox 142 | Balanced | — | — | 47 s inference vs ~11 s Chromium: Firefox WASM much slower |
 
 Decision (2026-10-29): WebGPU is opt-in ("GPU (WebGPU, experimental)");
 "auto" now means CPU, and the app no longer auto-selects Best on GPU
 machines. diagnostics.html reports hangs (no engine message for 60 s,
 `?hang=ms` to override) with the stage instead of freezing.
+Observation: on both ARM devices Best (fp16) is as fast as Balanced (8-bit)
+on CPU (Mac 2.5 vs 2.9 s, Android 7.6 vs 7.4 s) while giving cleaner masks;
+on the x86 runner Balanced is faster (~11 vs ~16 s). Candidate Phase 2
+change: pick Best by default on ARM, or speed up the 8-bit model.
 NEXT: get a report from a Windows/NVIDIA PC; investigate the Metal hang
 (session create vs run; try ORT newer than 1.22, fp32 vs fp16, numThreads=1).
