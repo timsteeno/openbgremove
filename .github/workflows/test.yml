@@ -47,6 +47,13 @@ jobs:
       - run: node tests/smoke.mjs http://localhost:8765/
         env:
           BROWSER: ${{ matrix.browser }}
+          SHOT: smoke-${{ matrix.browser }}.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.browser }}
+          path: smoke-${{ matrix.browser }}.png
+          if-no-files-found: ignore
 
   mirrors:
     name: Model mirrors serve the right bytes
