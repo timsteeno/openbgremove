@@ -12,10 +12,12 @@ page.on('console', (m) => logs.push(`[${m.type()}] ${m.text()}`));
 page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 page.on('worker', (w) => w.on('console', (m) => logs.push(`[worker ${m.type()}] ${m.text()}`)));
 page.on('requestfailed', (r) => logs.push(`[requestfailed] ${r.url()} ${r.failure()?.errorText}`));
-await page.goto(base);
+// SMOKE_QUERY (e.g. "threads=1") is appended to the URL; SMOKE_MODEL picks a model.
+await page.goto(base + (process.env.SMOKE_QUERY ? '?' + process.env.SMOKE_QUERY : ''));
 await page.waitForLoadState('networkidle');
 await page.waitForTimeout(1500); // coi-serviceworker may reload once
 console.log('crossOriginIsolated:', await page.evaluate(() => self.crossOriginIsolated));
+if (process.env.SMOKE_MODEL) await page.selectOption('#model-select', process.env.SMOKE_MODEL);
 await page.click('.sample[data-src="samples/astronaut.jpg"]');
 const snapshot = () => page.evaluate(() => {
   const i = window.__obr?.state.items[0];

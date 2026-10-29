@@ -171,3 +171,10 @@ on the x86 runner Balanced is faster (~11 vs ~16 s). Candidate Phase 2
 change: pick Best by default on ARM, or speed up the 8-bit model.
 NEXT: get a report from a Windows/NVIDIA PC; investigate the Metal hang
 (session create vs run; try ORT newer than 1.22, fp32 vs fp16, numThreads=1).
+
+WebKit (CI, Playwright WebKit 26 on Linux): model loads, then inference with
+`wasm x3` never finishes (>150 s). Hypothesis: multi-threaded WASM stalls in
+WebKit. Added (2026-10-29): watchdog restarts a stalled threaded CPU run
+single-threaded (>45 s and >5x expected) and remembers it (prefs.singleThread);
+?threads=N override for app and diagnostics; CI runs WebKit/Firefox with and
+without threads=1 to confirm. Real Safari (Mac/iPhone) still untested.

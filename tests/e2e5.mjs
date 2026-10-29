@@ -42,6 +42,8 @@ await check('re-run shows model, processor, expected time and a progress bar', a
 });
 
 await check('a stalled GPU run is retried on the CPU automatically', async () => {
+  // GPU is opt-in, so pick it (headless has no adapter; the run is marked as GPU below).
+  await S(() => { const d = document.querySelector('#device-select'); d.value = 'gpu'; d.dispatchEvent(new Event('change')); });
   await rerun();
   await waitStage('inference');
   // Pretend this run is on the GPU and has been stuck for a minute.
@@ -65,6 +67,23 @@ await check('"Use Fast model instead" appears on a slow run and switches models'
   const it = await item();
   assert(it.model === 'fast', 'model ' + it.model);
   assert(await page.inputValue('#model-select') === 'fast', 'select updated');
+});
+
+await check('a stalled multi-threaded CPU run restarts single-threaded and remembers it', async () => {
+  await S(() => { document.querySelector('#device-select').value = 'cpu'; document.querySelector('#device-select').dispatchEvent(new Event('change')); });
+  await page.selectOption('#model-select', 'fast');
+  await rerun();
+  await waitStage('inference');
+  const before = await S(() => window.__obr.state.items[0].backendRunning);
+  assert(/^wasm x\d/.test(before), 'expected a threaded run first, got ' + before);
+  await S(() => { window.__obr.state.items[0].stageAt = performance.now() - 300000; });
+  await page.waitForFunction(() => /single-threaded/.test(document.querySelector('#toast').textContent), null, { timeout: 5000 });
+  await waitDone();
+  const it = await item();
+  assert(it.b === 'wasm', 'backend after restart ' + it.b);
+  const saved = await S(() => JSON.parse(localStorage.getItem('obr-prefs') || '{}').singleThread);
+  assert(saved === true, 'remembered: ' + saved);
+  return `${before} → ${it.b}`;
 });
 
 await check('no uncaught page errors', async () => { assert(!errors.length, errors.join(' | ')); });

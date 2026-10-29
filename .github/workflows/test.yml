@@ -28,7 +28,7 @@ jobs:
   other-engines:
     name: Smoke (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     # Firefox and WebKit have not been verified yet; report without blocking.
     continue-on-error: true
     strategy:
@@ -44,10 +44,28 @@ jobs:
       - run: npx playwright install --with-deps ${{ matrix.browser }}
       - name: Start static server
         run: python3 -m http.server 8765 >/dev/null 2>&1 &
-      - run: node tests/smoke.mjs http://localhost:8765/
+      - name: Smoke (default settings)
+        run: node tests/smoke.mjs http://localhost:8765/
         env:
           BROWSER: ${{ matrix.browser }}
           SHOT: smoke-${{ matrix.browser }}.png
+          SMOKE_TIMEOUT: '300000'
+      # Experiment: is multi-threaded WASM the cause of the WebKit stall?
+      - name: Smoke, single-threaded (Balanced)
+        if: always()
+        run: node tests/smoke.mjs http://localhost:8765/
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SMOKE_QUERY: threads=1
+          SMOKE_TIMEOUT: '300000'
+      - name: Smoke, single-threaded (Fast)
+        if: always()
+        run: node tests/smoke.mjs http://localhost:8765/
+        env:
+          BROWSER: ${{ matrix.browser }}
+          SMOKE_QUERY: threads=1
+          SMOKE_MODEL: fast
+          SMOKE_TIMEOUT: '300000'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

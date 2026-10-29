@@ -124,7 +124,8 @@
     // (downloads send progress, so slow connections don't trip it).
     const HANG_MS = +new URLSearchParams(location.search).get('hang') || 60000;
     function startWorker() {
-      worker = new Worker(new URL('./js/worker.js', import.meta.url), { type: 'module' });
+      const threads = new URLSearchParams(location.search).get('threads');
+      worker = new Worker(new URL('./js/worker.js' + (threads ? `?threads=${threads}` : ''), import.meta.url), { type: 'module' });
       ready = new Promise((resolve, reject) => {
         worker.onmessage = (e) => {
           const m = e.data;

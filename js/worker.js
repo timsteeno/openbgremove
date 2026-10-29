@@ -9,7 +9,10 @@ const BASE = new URL('../', import.meta.url).href;
 const CACHE_NAME = 'obr-models-v2';
 
 ort.env.wasm.wasmPaths = BASE + 'vendor/ort/';
-ort.env.wasm.numThreads = self.crossOriginIsolated
+// ?threads=N on the worker URL overrides the thread count (1 = the
+// single-threaded fallback used when multi-threaded WASM stalls).
+const threadsParam = Number(new URL(import.meta.url).searchParams.get('threads'));
+ort.env.wasm.numThreads = threadsParam > 0 ? (self.crossOriginIsolated ? threadsParam : 1) : self.crossOriginIsolated
   ? Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 2) - 1))
   : 1;
 ort.env.logLevel = 'error';

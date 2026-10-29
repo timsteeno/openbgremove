@@ -60,8 +60,13 @@ function onWorkerMessage(e) {
 }
 
 let engineBroken = false;
+// ?threads=N in the page URL is for experiments; singleThread is the
+// remembered fallback after a multi-threaded stall.
+const threadsOverride = Number(new URLSearchParams(location.search).get('threads')) || 0;
+let singleThread = prefs.get('singleThread', false);
 function startWorker() {
-  const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  const threads = singleThread ? 1 : threadsOverride;
+  const w = new Worker(new URL('./worker.js' + (threads ? `?threads=${threads}` : ''), import.meta.url), { type: 'module' });
   let alive = false; // set once the worker script has loaded and said hello
   w.onmessage = (e) => {
     if (e.data && e.data.type === 'hello') {
@@ -323,12 +328,25 @@ const gpuTooSlow = new Set(); // models that stalled on this GPU this session
 // is far slower than expected (some GPUs/drivers stall), and flag slow runs.
 function watchdog(item, elapsedMs, est) {
   const onGpu = backendKind(item.backendRunning) === 'gpu';
+  const gpuRequested = state.device === 'gpu' && !item.forceCpu;
   const loadingTooLong = item.stage === 'loading-model' && !modelDownloading() && elapsedMs > 45000;
   const gpuTooLong = onGpu && item.stage === 'inference' && elapsedMs > Math.max(30000, est * 4);
-  if ((loadingTooLong || gpuTooLong) && !item.forceCpu && state.device !== 'cpu') {
+  if (gpuRequested && (loadingTooLong || gpuTooLong)) {
     item.forceCpu = true;
     gpuTooSlow.add(item.modelRunning);
     toast('The GPU is much slower than expected on this device, so this image is being retried on the CPU.', true);
+    cancelProcessing({ retry: true });
+    return true;
+  }
+  // Multi-threaded WASM can deadlock in some engines (seen in WebKit, Oct
+  // 2026): restart single-threaded, and remember it for later visits.
+  const threaded = /^wasm x\d/.test(item.backendRunning || '');
+  const cpuStalled = (threaded && item.stage === 'inference' && elapsedMs > Math.max(45000, est * 5)) ||
+    (!gpuRequested && loadingTooLong);
+  if (cpuStalled && !singleThread && !onGpu) {
+    singleThread = true;
+    prefs.set('singleThread', true);
+    toast('Processing stalled, so the engine was restarted in a slower but safer single-threaded mode.', true);
     cancelProcessing({ retry: true });
     return true;
   }
