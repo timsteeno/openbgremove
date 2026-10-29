@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    name: All suites (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Start static server
+        run: python3 -m http.server 8765 >/dev/null 2>&1 &
+      - run: node tests/run-all.mjs http://localhost:8765/
+
+  other-engines:
+    name: Smoke (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Firefox and WebKit have not been verified yet; report without blocking.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Start static server
+        run: python3 -m http.server 8765 >/dev/null 2>&1 &
+      - run: node tests/smoke.mjs http://localhost:8765/
+        env:
+          BROWSER: ${{ matrix.browser }}

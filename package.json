@@ -1,0 +1,13 @@
+{
+  "name": "openbgremove",
+  "private": true,
+  "description": "Free, open-source in-browser background remover. Static site: no build step; this file only pins the test tooling.",
+  "license": "Unlicense",
+  "scripts": {
+    "serve": "python3 -m http.server 8765",
+    "test": "node tests/run-all.mjs http://localhost:8765/"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}
