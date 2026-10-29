@@ -142,7 +142,10 @@ Roadmap doc: https://claude.ai/artifact/7cb9mqxouPJ61fBF2EHGHm
       (jsDelivr GitHub tag, then same origin) with hash verification.
       tools/convert_isnet.py reproduces the parts byte-for-byte; tests/e2e6.mjs
       covers tampered/HTML/down/good mirrors. Mirror pinned to commit 7d505b9a45cbc913ee24a7dca82950a24f0b802c (tag pushes are refused from the dev sandbox).
-- [ ] CI: GitHub Actions running all suites (+ Firefox/WebKit smoke).
-- [ ] Device self-test page (diagnostics.html) for real-hardware checks.
+- [x] CI: .github/workflows/test.yml — all suites on Chromium (tests/run-all.mjs),
+      smoke on Firefox + WebKit (non-blocking until verified).
+- [x] Device self-test page (diagnostics.html): env + WebGPU adapter, per
+      model x CPU/GPU first/warm timings, shape check, GPU-vs-CPU mask diff,
+      copyable JSON report. Linked from About.
 - HUMAN NEEDED: run diagnostics on real devices; confirm jsDelivr serves the
   tag (sandbox can't reach CDNs); approve workflow push if GitHub refuses.
