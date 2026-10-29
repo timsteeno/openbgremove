@@ -149,3 +149,18 @@ Roadmap doc: https://claude.ai/artifact/7cb9mqxouPJ61fBF2EHGHm
       copyable JSON report. Linked from About.
 - HUMAN NEEDED: run diagnostics on real devices; confirm jsDelivr serves the
   tag (sandbox can't reach CDNs); approve workflow push if GitHub refuses.
+
+### Real-device results
+| Date | Device | Browser | Model | CPU warm | GPU | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-29 | MacBook (8 cores, 32 GB, Apple Metal 3, shader-f16) | Chrome 156 | Fast | 0.38 s | hung | wasm x4; first run 3.1 s |
+| 2026-10-29 | same | same | Balanced | 2.87 s | hung | first run 5.8 s |
+| 2026-10-29 | same | same | Best | 2.52 s | hung | first run 19 s incl. 90 MB download |
+| 2026-10-29 | GitHub runner (4 vCPU) | Firefox 142 | Balanced | — | — | 47 s inference vs ~11 s Chromium: Firefox WASM much slower |
+
+Decision (2026-10-29): WebGPU is opt-in ("GPU (WebGPU, experimental)");
+"auto" now means CPU, and the app no longer auto-selects Best on GPU
+machines. diagnostics.html reports hangs (no engine message for 60 s,
+`?hang=ms` to override) with the stage instead of freezing.
+NEXT: get a report from a Windows/NVIDIA PC; investigate the Metal hang
+(session create vs run; try ORT newer than 1.22, fp32 vs fp16, numThreads=1).

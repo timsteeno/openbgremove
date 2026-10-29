@@ -146,7 +146,9 @@ function getSession(model, device) {
     const p = (async () => {
       const def = MODELS[model];
       const bytes = await loadModelBytes(model);
-      const tryGpu = device === 'gpu' || (device === 'auto' && def.gpuFriendly && await webgpuAvailable());
+      // WebGPU is opt-in: it hung on real hardware (Chrome on Apple M-series,
+      // Oct 2026) while the CPU path was fast, so "auto" means CPU for now.
+      const tryGpu = device === 'gpu' && await webgpuAvailable();
       if (tryGpu) {
         try {
           const session = await ort.InferenceSession.create(bytes, {

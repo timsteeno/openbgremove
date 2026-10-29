@@ -45,7 +45,7 @@
       </div>
       <div>
         <label><input type="checkbox" name="device" value="cpu" checked> CPU</label>
-        <label><input type="checkbox" name="device" value="gpu" checked> GPU (WebGPU)</label>
+        <label><input type="checkbox" name="device" value="gpu" checked> GPU (WebGPU, experimental)</label>
       </div>
       <div><label>Warm runs per test <select id="runs"><option>2</option><option selected>3</option><option>5</option></select></label></div>
     </fieldset>
@@ -119,15 +119,21 @@
     let ready = null;
     const pending = new Map();
     let nextId = 1;
+    let lastMsgAt = 0;
+    // A run with no message from the engine for this long is reported as hung
+    // (downloads send progress, so slow connections don't trip it).
+    const HANG_MS = +new URLSearchParams(location.search).get('hang') || 60000;
     function startWorker() {
       worker = new Worker(new URL('./js/worker.js', import.meta.url), { type: 'module' });
       ready = new Promise((resolve, reject) => {
         worker.onmessage = (e) => {
           const m = e.data;
           if (m.type === 'hello') { m.unsupported ? reject(new Error(m.unsupported)) : resolve(); return; }
+          lastMsgAt = performance.now();
           if (m.type === 'progress') { $('#status').textContent = `Downloading ${MODELS[m.model].label} model… ${Math.round(m.loaded / m.total * 100)}%`; return; }
           const p = pending.get(m.id);
           if (!p) return;
+          if (m.type === 'status') { p.stage = m.stage; if (m.backend) p.backend = m.backend; return; }
           if (m.type === 'result') { pending.delete(m.id); p.resolve(m); }
           else if (m.type === 'error') { pending.delete(m.id); p.reject(new Error(m.message)); }
         };
@@ -138,8 +144,23 @@
       await ready;
       const id = nextId++;
       const t0 = performance.now();
+      lastMsgAt = performance.now();
       const r = await new Promise((resolve, reject) => {
-        pending.set(id, { resolve, reject });
+        const job = { resolve, reject, stage: 'starting' };
+        pending.set(id, job);
+        const watch = setInterval(() => {
+          if (!pending.has(id)) { clearInterval(watch); return; }
+          if (performance.now() - lastMsgAt > HANG_MS) {
+            clearInterval(watch);
+            pending.delete(id);
+            const where = { 'loading-model': 'starting the model', inference: 'running the model', refining: 'refining edges' }[job.stage] || job.stage;
+            const e = new Error(`hung for over ${HANG_MS / 1000} s while ${where}${job.backend ? ' on ' + job.backend : ''}`);
+            e.hung = true; e.stage = job.stage; e.backend = job.backend;
+            reject(e);
+          }
+        }, 1000);
+        const done = (fn) => (v) => { clearInterval(watch); fn(v); };
+        job.resolve = done(resolve); job.reject = done(reject);
         worker.postMessage({ type: 'run', id, model, device, bitmap, refine: true }, [bitmap]);
       });
       return { ...r, wall: performance.now() - t0 };
@@ -230,6 +251,7 @@
             row.check = notes.join(', ');
           } catch (e) {
             row.error = e.message || String(e);
+            if (e.hung) { row.hung = true; row.hungStage = e.stage; row.ranOn = e.backend || row.ranOn; }
             // a failed engine may be unusable: restart it for the next test
             worker.terminate();
             startWorker();
