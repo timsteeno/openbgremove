@@ -7,7 +7,7 @@ canvas limit).
 
 ## Features
 - Upload by file picker, drag & drop, paste (Ctrl/⌘+V) or image URL; multiple files at once
-- Three AI models: **Fast** (U²-Netp, 4.6 MB), **Balanced** (ISNet 8-bit, 44 MB), **Best** (ISNet fp16, 88 MB)
+- Three AI models: **Fast** (U²-Netp, 4.6 MB), **Balanced** (ISNet 8-bit, 46 MB), **Best** (ISNet fp16, 90 MB)
 - WebGPU acceleration when available, multi-threaded WASM otherwise
 - Edge colour decontamination for clean hair/soft edges on new backgrounds
 - Before/after compare slider, zoom & pan (wheel, pinch, space-drag)
@@ -47,6 +47,7 @@ node tests/e2e2.mjs http://localhost:8765/              # regression checks
 node tests/e2e3.mjs http://localhost:8765/              # review regressions
 node tests/e2e4.mjs http://localhost:8765/              # memory / hibernation
 node tests/e2e5.mjs http://localhost:8765/              # progress feedback / GPU watchdog
+node tests/e2e6.mjs http://localhost:8765/              # model mirrors + hash checks
 node tests/offline.mjs http://localhost:8765/           # offline/PWA check
 ```
 
@@ -55,8 +56,19 @@ node tests/offline.mjs http://localhost:8765/           # offline/PWA check
 - onnxruntime-web: MIT (`licenses/onnxruntime-web-MIT.txt`)
 - coi-serviceworker: MIT (`licenses/coi-serviceworker-MIT.txt`)
 - U²-Netp model: Apache-2.0 (`licenses/Apache-2.0.txt`), via npm `@planby-tech/rmbg-webgpu`
-- ISNet models: from npm `@imgly/background-removal-data` (AGPL-3.0,
-  `licenses/imgly-background-removal-data-AGPL-3.0.md`); original ISNet/DIS
-  weights by Xuebin Qin et al. (Apache-2.0). If you redistribute the ISNet
-  model files, comply with the AGPL-3.0 (this project's source is public).
+- ISNet models: Apache-2.0 (`licenses/Apache-2.0.txt`). Our own fp16 and 8-bit
+  conversions of the "isnet-general-use" weights from the DIS project by
+  Xuebin Qin et al. Source file: `isnet-general-use.onnx` as published by
+  rembg (MIT), md5 `fc16ebd8b0c10d971d3513d564d01e29` (the checksum rembg
+  pins), obtained via npm `isnet-background-removal@1.0.2`. Commits before
+  this change shipped AGPL-3.0 copies from `@imgly/background-removal-data`;
+  those files are no longer included.
+
+## Model hosting
+Models are split into parts of at most 20 MB, each with a SHA-256 hash in
+`js/models.js`. The app tries the mirrors in `MODEL_MIRRORS` in order (by
+default jsDelivr serving the `models-v1` tag of this repo, then the site
+itself) and only accepts bytes whose hash matches. This keeps bandwidth off
+GitHub Pages. If you change a model file, publish a new tag (e.g.
+`models-v2`) and update the mirror URL and hashes together.
 - Sample images: from scikit-image's bundled data (public domain / CC0).

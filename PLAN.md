@@ -128,3 +128,21 @@ createRequire, see tests/smoke.mjs).
   instead" button on slow runs. tests/e2e5.mjs. All suites pass.
 - OPEN QUESTION: which model/browser/GPU the user had — real GPU testing still
   needed.
+
+## Phase 0 (stabilize) — started 2026-10-29
+Roadmap doc: https://claude.ai/artifact/7cb9mqxouPJ61fBF2EHGHm
+- [x] Replace AGPL ISNet files with our own conversions of the Apache-2.0
+      original. Source verified: npm `isnet-background-removal@1.0.2` ships
+      `isnet-general-use.onnx` whose md5 fc16ebd8b0c10d971d3513d564d01e29
+      equals rembg 2.0.86's pinned checksum for the official file. Converted
+      with onnxruntime.transformers.float16 (keep_io_types) and
+      quantize_dynamic(QUInt8) after trimming side outputs. Masks vs fp32:
+      fp16 MAE <=0.02/255; q8 0.1-6.6/255 (same as imgly q8).
+- [x] Models in <=20 MB chunks with sha256, loaded from mirrors
+      (jsDelivr GitHub tag, then same origin) with hash verification.
+      tools/convert_isnet.py reproduces the parts byte-for-byte; tests/e2e6.mjs
+      covers tampered/HTML/down/good mirrors. Tag `models-v1` = model files.
+- [ ] CI: GitHub Actions running all suites (+ Firefox/WebKit smoke).
+- [ ] Device self-test page (diagnostics.html) for real-hardware checks.
+- HUMAN NEEDED: run diagnostics on real devices; confirm jsDelivr serves the
+  tag (sandbox can't reach CDNs); approve workflow push if GitHub refuses.

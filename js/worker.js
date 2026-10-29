@@ -1,12 +1,12 @@
 // Inference worker: loads ONNX models, predicts an alpha matte for an image,
 // upscales it to full resolution and estimates clean foreground colours.
 import * as ort from '../vendor/ort/ort.webgpu.min.mjs';
-import { MODELS } from './models.js';
+import { MODELS, MODEL_MIRRORS } from './models.js';
 import { estimateForeground } from './matting.js';
 import { guidedUpscale } from './upscale.js';
 
 const BASE = new URL('../', import.meta.url).href;
-const CACHE_NAME = 'obr-models-v1';
+const CACHE_NAME = 'obr-models-v2';
 
 ort.env.wasm.wasmPaths = BASE + 'vendor/ort/';
 ort.env.wasm.numThreads = self.crossOriginIsolated
@@ -24,75 +24,111 @@ async function openCache() {
   try { return await caches.open(CACHE_NAME); } catch { return null; } // Cache API unavailable
 }
 
+// Cache entries are keyed by the same-origin URL whichever mirror served them.
+const cacheKey = (part) => BASE + part.path;
+
 async function evictModel(def) {
   const cache = await openCache();
-  if (cache) for (const f of def.files) await cache.delete(BASE + f).catch(() => {});
+  if (cache) for (const f of def.files) await cache.delete(cacheKey(f)).catch(() => {});
 }
 
-async function fetchWithProgress(url, onBytes, cache) {
+async function sha256Hex(buf) {
+  const d = new Uint8Array(await crypto.subtle.digest('SHA-256', buf));
+  let h = '';
+  for (const b of d) h += b.toString(16).padStart(2, '0');
+  return h;
+}
+
+// Download one URL, reporting how many bytes have arrived so far.
+const STALL_MS = 20000; // give up on a mirror that sends nothing for this long
+
+async function download(url, onProgress) {
+  const ctl = new AbortController();
+  let timer = setTimeout(() => ctl.abort(), STALL_MS);
+  const alive = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), STALL_MS); };
+  try {
+    return await downloadInner(url, (n) => { alive(); onProgress(n); }, ctl.signal);
+  } catch (e) {
+    throw ctl.signal.aborted ? new Error('stalled') : e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function downloadInner(url, onProgress, signal) {
+  const res = await fetch(url, { mode: 'cors', credentials: 'omit', signal });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (/text\/html/i.test(res.headers.get('content-type') || '')) {
+    throw new Error('got a web page instead of the model file');
+  }
+  if (!res.body || !res.body.getReader) {
+    const buf = await res.arrayBuffer();
+    onProgress(buf.byteLength);
+    return buf;
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+    onProgress(total);
+  }
+  const out = new Uint8Array(total);
+  let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.byteLength; }
+  return out.buffer;
+}
+
+const deadMirrors = new Set();
+
+// Fetch one model part: cache first, then each mirror until one returns
+// bytes with the expected size and SHA-256.
+async function fetchPart(part, cache, onProgress) {
   if (cache) {
-    const hit = await cache.match(url);
+    const hit = await cache.match(cacheKey(part));
     if (hit) {
       const buf = await hit.arrayBuffer();
-      onBytes(buf.byteLength);
-      return { buf, cached: true };
+      if (buf.byteLength === part.bytes) { onProgress(buf.byteLength); return buf; }
+      await cache.delete(cacheKey(part)).catch(() => {});
     }
   }
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download ${url} (HTTP ${res.status})`);
-  if (/text\/html/i.test(res.headers.get('content-type') || '')) {
-    throw new Error(`The server returned a web page instead of the model file ${url}. Check that the models/ folder was deployed.`);
-  }
-  let buf;
-  if (res.body && res.body.getReader) {
-    const reader = res.body.getReader();
-    const parts = [];
-    let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      parts.push(value);
-      total += value.byteLength;
-      onBytes(value.byteLength);
+  const errors = [];
+  for (const mirror of MODEL_MIRRORS) {
+    if (deadMirrors.has(mirror)) continue;
+    const url = (mirror || BASE) + part.path;
+    try {
+      const buf = await download(url, onProgress);
+      if (buf.byteLength !== part.bytes) throw new Error(`size ${buf.byteLength}, expected ${part.bytes}`);
+      if (crypto.subtle && (await sha256Hex(buf)) !== part.sha256) throw new Error('checksum mismatch');
+      if (cache) {
+        try { await cache.put(cacheKey(part), new Response(buf.slice(0))); } catch { /* quota */ }
+      }
+      return buf;
+    } catch (e) {
+      errors.push(`${mirror ? new URL(mirror).host : 'this site'}: ${e.message || e}`);
+      // Unreachable (not just one bad file): skip it for the other parts.
+      if (mirror && (e instanceof TypeError || e.message === 'stalled')) deadMirrors.add(mirror);
+      onProgress(0);
     }
-    const out = new Uint8Array(total);
-    let o = 0;
-    for (const p of parts) { out.set(p, o); o += p.byteLength; }
-    buf = out.buffer;
-  } else {
-    buf = await res.arrayBuffer();
-    onBytes(buf.byteLength);
   }
-  return { buf, cached: false };
+  throw new Error(`Could not download ${part.path} (${errors.join('; ')}). Check your connection and try again.`);
 }
 
 async function loadModelBytes(model) {
   const def = MODELS[model];
-  let loaded = 0;
-  const report = (n) => {
-    loaded += n;
-    post({ type: 'progress', model, loaded, total: def.bytes });
-  };
+  const done = new Array(def.files.length).fill(0);
+  const report = () => post({ type: 'progress', model, loaded: done.reduce((a, b) => a + b, 0), total: def.bytes });
   const cache = await openCache();
-  const parts = [];
-  for (const f of def.files) parts.push(await fetchWithProgress(BASE + f, report, cache));
-  const bufs = parts.map((p) => p.buf);
-  const total = bufs.reduce((s, b) => s + b.byteLength, 0);
-  if (total !== def.bytes) {
-    await evictModel(def);
-    throw new Error(`Model download is incomplete or corrupt (${total} of ${def.bytes} bytes). Please try again.`);
-  }
-  // Only cache once the whole model has the expected size.
-  if (cache) {
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i].cached) continue;
-      try { await cache.put(BASE + def.files[i], new Response(bufs[i].slice(0))); } catch { /* quota */ }
-    }
-  }
-  if (bufs.length === 1) return new Uint8Array(bufs[0]);
-  const out = new Uint8Array(total);
+  const out = new Uint8Array(def.bytes);
   let o = 0;
-  for (const b of bufs) { out.set(new Uint8Array(b), o); o += b.byteLength; }
+  for (let i = 0; i < def.files.length; i++) {
+    const buf = await fetchPart(def.files[i], cache, (n) => { done[i] = n; report(); });
+    out.set(new Uint8Array(buf), o);
+    o += buf.byteLength;
+  }
   return out;
 }
 

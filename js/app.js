@@ -1055,7 +1055,7 @@ initPanel();
 initToolbar();
 initInputs();
 
-// With a usable GPU the 88 MB fp16 model is fast and gives the cleanest
+// With a usable GPU the 90 MB fp16 model is fast and gives the cleanest
 // masks, so make it the default unless the user picked a model.
 if (!MODELS[prefs.get('model')] && navigator.gpu) {
   navigator.gpu.requestAdapter().then((adapter) => {
