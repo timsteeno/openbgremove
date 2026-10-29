@@ -124,7 +124,10 @@
     // (downloads send progress, so slow connections don't trip it).
     const HANG_MS = +new URLSearchParams(location.search).get('hang') || 60000;
     function startWorker() {
-      const threads = new URLSearchParams(location.search).get('threads');
+      const ua = navigator.userAgent;
+      const webkit = /CriOS|FxiOS|EdgiOS/.test(ua) || (/AppleWebKit/.test(ua) && !/(Chrome|Chromium|Edg)\//.test(ua));
+      // Same rule as the app: WebKit runs single-threaded unless ?threads= says otherwise.
+      const threads = new URLSearchParams(location.search).get('threads') || (webkit ? '1' : '');
       worker = new Worker(new URL('./js/worker.js' + (threads ? `?threads=${threads}` : ''), import.meta.url), { type: 'module' });
       ready = new Promise((resolve, reject) => {
         worker.onmessage = (e) => {

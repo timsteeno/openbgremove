@@ -178,3 +178,8 @@ WebKit. Added (2026-10-29): watchdog restarts a stalled threaded CPU run
 single-threaded (>45 s and >5x expected) and remembers it (prefs.singleThread);
 ?threads=N override for app and diagnostics; CI runs WebKit/Firefox with and
 without threads=1 to confirm. Real Safari (Mac/iPhone) still untested.
+CI result (run 7): WebKit multi-threaded stalls; single-threaded works —
+Balanced 11.6 s, Fast 1.9 s inference (about the same as threaded Chromium on
+that runner). The watchdog rescued the default run but only after ~60 s, so
+WebKit-based browsers (Safari, all iOS browsers) now start single-threaded.
+Firefox works threaded (Balanced ~45 s inference on the runner, slow).

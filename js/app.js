@@ -63,7 +63,14 @@ let engineBroken = false;
 // ?threads=N in the page URL is for experiments; singleThread is the
 // remembered fallback after a multi-threaded stall.
 const threadsOverride = Number(new URLSearchParams(location.search).get('threads')) || 0;
-let singleThread = prefs.get('singleThread', false);
+// WebKit (Safari, and every browser on iOS) stalls in multi-threaded WASM
+// (CI, Oct 2026) and single-threaded is about as fast there, so start it
+// single-threaded instead of waiting for the watchdog.
+const isWebKit = (() => {
+  const ua = navigator.userAgent;
+  return /CriOS|FxiOS|EdgiOS/.test(ua) || (/AppleWebKit/.test(ua) && !/(Chrome|Chromium|Edg)\//.test(ua));
+})();
+let singleThread = prefs.get('singleThread', false) || isWebKit;
 function startWorker() {
   const threads = singleThread ? 1 : threadsOverride;
   const w = new Worker(new URL('./worker.js' + (threads ? `?threads=${threads}` : ''), import.meta.url), { type: 'module' });

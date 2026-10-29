@@ -71,7 +71,9 @@ await check('"Use Fast model instead" appears on a slow run and switches models'
 
 await check('a stalled multi-threaded CPU run restarts single-threaded and remembers it', async () => {
   await S(() => { document.querySelector('#device-select').value = 'cpu'; document.querySelector('#device-select').dispatchEvent(new Event('change')); });
-  await page.selectOption('#model-select', 'fast');
+  // Balanced is slow enough that the 1 s watchdog tick sees the faked stall
+  // before the run finishes, even on a fast CI runner.
+  await page.selectOption('#model-select', 'balanced');
   await rerun();
   await waitStage('inference');
   const before = await S(() => window.__obr.state.items[0].backendRunning);
